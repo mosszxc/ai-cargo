@@ -1,0 +1,10 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+data/companies/*/
+data/cache/
+node_modules/
+.claude/
+*.pyc
+.analysis.md

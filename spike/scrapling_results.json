@@ -1,0 +1,163 @@
+[
+  {
+    "success": true,
+    "offer_id": "822970193916",
+    "title": "跨境美式经典系列高街潮牌GALL复古基础字母D印花短袖男女同款T恤",
+    "price_cny": {
+      "min": 45.0,
+      "max": 45.0,
+      "variants": []
+    },
+    "weight_kg": 0.32,
+    "dimensions": {
+      "l": 35,
+      "w": 30,
+      "h": 1.5
+    },
+    "image_url": null,
+    "min_order": 1,
+    "category": "Футболки",
+    "source": "scrapling_llm",
+    "_elapsed_sec": 34.4,
+    "_category": "clothing"
+  },
+  {
+    "success": true,
+    "offer_id": "888640675772",
+    "title": "Hivi/惠威 D3.1发烧hifi书架音箱高保真木质2.0无源音响专业音箱",
+    "price_cny": {
+      "min": 2100.0,
+      "max": 2100.0,
+      "variants": [
+        {
+          "name": "D3.1书架箱一对",
+          "price": 2100
+        }
+      ]
+    },
+    "weight_kg": 26.0,
+    "dimensions": null,
+    "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN010EoV9r1zGF88YqL0S_!!2211411526686-0-cib.jpg",
+    "min_order": 2,
+    "category": "Акустические системы",
+    "source": "scrapling_llm",
+    "_elapsed_sec": 47.9,
+    "_category": "electronics"
+  },
+  {
+    "success": true,
+    "offer_id": "595045370736",
+    "title": "薛之谦同款恐龙毛绒玩具公仔霸王龙小号玩偶娃娃男孩达拉崩吧可爱",
+    "price_cny": {
+      "min": 15.5,
+      "max": 52.0,
+      "variants": [
+        {
+          "name": "蓝 35cm",
+          "price": 15.5
+        },
+        {
+          "name": "蓝 50cm",
+          "price": 26.5
+        },
+        {
+          "name": "蓝 70cm",
+          "price": 52
+        },
+        {
+          "name": "绿 35cm",
+          "price": 15.5
+        },
+        {
+          "name": "绿 50cm",
+          "price": 26.5
+        },
+        {
+          "name": "绿 70cm",
+          "price": 52
+        }
+      ]
+    },
+    "weight_kg": null,
+    "dimensions": null,
+    "image_url": "https://cbu01.alicdn.com/img/ibank/12873982032_169043806.jpg",
+    "min_order": 1,
+    "category": "Мягкие игрушки и плюшевые животные",
+    "source": "scrapling_llm",
+    "_elapsed_sec": 50.3,
+    "_category": "toys"
+  },
+  {
+    "success": true,
+    "offer_id": "752205332799",
+    "title": "FCT3065-XY DIP-8 无线鼠标传感器IC",
+    "price_cny": {
+      "min": 4.5,
+      "max": 4.5,
+      "variants": []
+    },
+    "weight_kg": null,
+    "dimensions": null,
+    "image_url": null,
+    "min_order": 50,
+    "category": "Электронные компоненты и микросхемы",
+    "source": "scrapling_llm",
+    "_elapsed_sec": 55.0,
+    "_category": "electronics"
+  },
+  {
+    "success": true,
+    "offer_id": "790251400429",
+    "title": "进口NSK调心滚子轴承 22238 22240 22244 CAM CD EA K E4 C3 S11",
+    "price_cny": {
+      "min": 2652.0,
+      "max": 4396.0,
+      "variants": [
+        {
+          "name": "22238CAME4 铜保（190*340*92）",
+          "price": 2658
+        },
+        {
+          "name": "22238CDE4 钢保（190*340*92）",
+          "price": 2658
+        },
+        {
+          "name": "22240CAME4 铜保（200*360*98）",
+          "price": 3099
+        },
+        {
+          "name": "22240CDE4 钢保（200*360*98）",
+          "price": 3099
+        },
+        {
+          "name": "22244CAME4 铜保（220*400*108）",
+          "price": 4396
+        },
+        {
+          "name": "22244CDE4 钢保（220*400*108）",
+          "price": 4396
+        },
+        {
+          "name": "22238EAE4 钢保（190*340*92）",
+          "price": 2652
+        },
+        {
+          "name": "22240EAE4 钢保（200*360*98）",
+          "price": 3200
+        },
+        {
+          "name": "22244EAE4 钢保（220*400*108）",
+          "price": 4359
+        }
+      ]
+    },
+    "weight_kg": 0.3,
+    "dimensions": null,
+    "image_url": null,
+    "min_order": 1,
+    "category": "Подшипники и компоненты передачи",
+    "source": "scrapling_llm",
+    "_elapsed_sec": 47.5,
+    "_category": "industrial"
+  }
+]
