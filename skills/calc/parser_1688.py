@@ -30,7 +30,7 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 
 CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache"
-CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+CACHE_TTL_SECONDS = 72 * 60 * 60  # 72 hours
 
 
 def _load_env():
@@ -126,6 +126,42 @@ def is_1688_url(text: str) -> Optional[str]:
     return None
 
 
+def _parse_weight(text: str) -> Optional[float]:
+    """Parse weight from various text formats. Returns kg or None.
+
+    Handles: "500g", "2.5kg", "300克", "1.5千克", "2кг", "150г", bare numbers.
+    """
+    if not text or not text.strip():
+        return None
+    text = text.strip().lower()
+
+    # kg patterns: "2.5kg", "1.5千克", "2кг"
+    m = re.search(r'([\d.]+)\s*(?:kg|千克|кг)', text)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            return None
+
+    # gram patterns: "500g", "300克", "150г"
+    m = re.search(r'([\d.]+)\s*(?:g|克|г)', text)
+    if m:
+        try:
+            return float(m.group(1)) / 1000.0
+        except ValueError:
+            return None
+
+    # Bare number — assume kg
+    m = re.match(r'^[\d.]+$', text)
+    if m:
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    return None
+
+
 def _make_result(offer_id: str = "") -> dict:
     """Create an empty result template."""
     return {
@@ -139,7 +175,91 @@ def _make_result(offer_id: str = "") -> dict:
         "min_order": None,
         "category": None,
         "source": None,  # "scrapling_llm"
+        "weight_warnings": [],
     }
+
+
+# Typical per-piece weight ranges by category (kg)
+_WEIGHT_RANGES = {
+    "clothing":    (0.05, 3.0),
+    "textile":     (0.05, 3.0),
+    "shoes":       (0.15, 3.0),
+    "electronics": (0.01, 15.0),
+    "appliances":  (0.5, 50.0),
+    "toys":        (0.02, 5.0),
+    "cosmetics":   (0.005, 2.0),
+    "household":   (0.01, 20.0),
+    "general":     (0.01, 50.0),
+}
+
+# Common GSM (g/m²) values for textiles — NOT product weight
+_COMMON_GSM = {120, 150, 160, 180, 200, 220, 250, 280, 300, 320, 380}
+
+
+def validate_weight(weight_kg: Optional[float], category: str = "general") -> list[str]:
+    """Validate extracted weight, return list of warning strings (empty = OK).
+
+    Checks:
+    - Suspiciously light (< category min) → possible decimal error
+    - Suspiciously heavy (> category max) → possible grams-not-converted
+    - GSM confusion for textiles (克重 = fabric density, not product weight)
+    """
+    if weight_kg is None:
+        return []
+
+    warnings = []
+    # Normalize category to our keys
+    cat_lower = (category or "general").lower()
+    cat_key = "general"
+    for key in _WEIGHT_RANGES:
+        if key in cat_lower:
+            cat_key = key
+            break
+    # Also match Russian category names from Haiku
+    ru_mapping = {
+        "футболк": "clothing", "одежд": "clothing", "куртк": "clothing",
+        "носк": "clothing", "джинс": "clothing", "платье": "clothing",
+        "кроссовк": "shoes", "обув": "shoes", "ботинк": "shoes",
+        "игруш": "toys", "плюш": "toys",
+        "косметик": "cosmetics", "крем": "cosmetics",
+        "электрон": "electronics", "ноутбук": "electronics",
+        "аудио": "electronics", "динамик": "electronics", "акустик": "electronics",
+        "бытов": "appliances", "машин": "appliances",
+    }
+    for substr, mapped_cat in ru_mapping.items():
+        if substr in cat_lower:
+            cat_key = mapped_cat
+            break
+
+    min_w, max_w = _WEIGHT_RANGES[cat_key]
+
+    # GSM check for textiles — only flag if weight_kg < min_w AND looks like GSM
+    # (e.g. 0.18 kg from "180克重" where 180 is GSM, not grams)
+    # Don't flag values in the normal weight range (0.05-3.0 kg)
+    if cat_key in ("clothing", "textile") and weight_kg < min_w:
+        weight_g = round(weight_kg * 1000)
+        if weight_g in _COMMON_GSM:
+            warnings.append(
+                f"⚠ Вес {weight_kg} кг — возможно это плотность ткани (GSM), а не вес товара"
+            )
+            return warnings
+
+    if weight_kg < min_w:
+        warnings.append(
+            f"⚠ Вес {weight_kg} кг подозрительно мал (обычно {min_w}–{max_w} кг для этой категории)"
+        )
+    elif weight_kg > max_w:
+        corrected = weight_kg / 1000
+        if min_w <= corrected <= max_w:
+            warnings.append(
+                f"⚠ Вес {weight_kg} кг — возможно указан в граммах? ({corrected} кг более типично)"
+            )
+        else:
+            warnings.append(
+                f"⚠ Вес {weight_kg} кг необычно велик для этой категории (обычно {min_w}–{max_w} кг)"
+            )
+
+    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -264,16 +384,19 @@ Important rules:
             raise RuntimeError("ANTHROPIC_API_KEY not set — needed for LLM extraction")
 
         # --- Step 1: Load page with Scrapling ---
+        # NOTE: network_idle is broken in Camoufox (resolves immediately,
+        # see github.com/daijro/camoufox/issues/272). The `wait` param
+        # is the real loading buffer. Using 4s + longer scroll delays.
         def page_action(page):
             """Scroll to trigger lazy loading."""
             import time as _time
             try:
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3)")
-                _time.sleep(1)
+                _time.sleep(1.0)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-                _time.sleep(1)
+                _time.sleep(1.0)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                _time.sleep(1)
+                _time.sleep(1.0)
             except Exception:
                 pass
 
@@ -282,8 +405,8 @@ Important rules:
             headless=True,
             locale="zh-CN",
             network_idle=True,
-            timeout=30000,
-            wait=3000,
+            timeout=45000,
+            wait=4000,
             page_action=page_action,
             google_search=False,
             disable_resources=False,
@@ -361,7 +484,7 @@ Important rules:
             elif isinstance(price_data, (int, float)):
                 result["price_cny"] = {"min": float(price_data), "max": float(price_data), "variants": []}
 
-            # Weight
+            # Weight + validation
             weight = extracted.get("weight_kg")
             if weight is not None:
                 try:
@@ -369,13 +492,18 @@ Important rules:
                 except (ValueError, TypeError):
                     pass
 
+            # Category (extract early for weight validation)
+            result["category"] = extracted.get("category")
+
             # Dimensions
             dims = extracted.get("dimensions_cm")
             if isinstance(dims, dict) and any(dims.get(k) for k in ("l", "w", "h")):
                 result["dimensions"] = dims
 
-            # Image
-            result["image_url"] = extracted.get("image_url")
+            # Image — prefer HTML-extracted (more reliable), fallback to LLM
+            llm_image = extracted.get("image_url")
+            if not result["image_url"] and llm_image:
+                result["image_url"] = llm_image
 
             # Min order
             min_order = extracted.get("min_order")
@@ -385,8 +513,11 @@ Important rules:
                 except (ValueError, TypeError):
                     pass
 
-            # Category
-            result["category"] = extracted.get("category")
+        # Validate weight against category ranges
+        if result["weight_kg"] is not None:
+            result["weight_warnings"] = validate_weight(
+                result["weight_kg"], result.get("category") or "general"
+            )
 
         # Validate we got something useful
         if not result["title"] and not result["price_cny"]:
@@ -395,9 +526,26 @@ Important rules:
         return result
 
     def _extract_main_image(self, response) -> Optional[str]:
-        """Extract main product image URL directly from HTML (not via LLM)."""
+        """Extract main product image URL directly from HTML (not via LLM).
+
+        Strategy (ordered by reliability):
+        1. CSS selectors for known gallery elements
+        2. <img> tags with cbu01.alicdn.com/img/ibank/ URLs (product photos)
+        3. <img> tags with img.alicdn.com/imgextra/ URLs (large, not icons)
+        4. Regex in <script> tags for ibank URLs
+        5. Regex in <script> tags for offerImgList JSON array
+        """
+        def _normalize_url(src: str) -> str:
+            if src.startswith("//"):
+                return "https:" + src
+            return src
+
+        def _is_icon(src: str) -> bool:
+            """Filter out tiny platform icons (tps-NNxNN, _50x50, etc.)."""
+            return bool(re.search(r'tps-\d+x\d+|_\d{1,2}x\d{1,2}', src))
+
         try:
-            # Try common 1688 product image selectors
+            # 1. CSS selectors for known gallery elements
             selectors = [
                 "img.detail-gallery-img",
                 "img[data-role='main-image']",
@@ -412,31 +560,47 @@ Important rules:
                     img = imgs[0] if hasattr(imgs, '__getitem__') else imgs
                     src = img.attrib.get("src") or img.attrib.get("data-src") or img.attrib.get("data-lazy-src")
                     if src:
-                        if src.startswith("//"):
-                            src = "https:" + src
-                        return src
+                        return _normalize_url(src)
 
-            # Fallback: find any alicdn.com image (1688's CDN)
+            # 2-3. Scan <img> tags for product image CDN URLs
             all_imgs = response.css("img")
             if all_imgs:
-                for img in all_imgs[:20]:
+                # Pass 1: ibank URLs (highest confidence — always product photos)
+                for img in all_imgs[:30]:
                     src = img.attrib.get("src") or img.attrib.get("data-src") or ""
-                    if "alicdn.com" in src and ("ibank" in src or "cbu01" in src):
-                        if src.startswith("//"):
-                            src = "https:" + src
-                        # Skip tiny icons (usually < 50px wide)
-                        if "_50x50" not in src and "_32x32" not in src:
+                    if "cbu01.alicdn.com" in src and "ibank" in src:
+                        src = _normalize_url(src)
+                        if not _is_icon(src):
+                            return src
+                # Pass 2: imgextra URLs (large product images, skip icons)
+                for img in all_imgs[:30]:
+                    src = img.attrib.get("src") or img.attrib.get("data-src") or ""
+                    if "img.alicdn.com/imgextra" in src:
+                        src = _normalize_url(src)
+                        if not _is_icon(src):
                             return src
 
-            # Last resort: find alicdn URLs in script data
+            # 4-5. Regex scan in <script> tags
             scripts = response.css("script")
-            if scripts:
-                for script in scripts[:30]:
-                    text = script.text if hasattr(script, 'text') else ""
-                    if text:
-                        match = re.search(r'(https?://cbu01\.alicdn\.com/img/[^"\'\\]+\.(?:jpg|png|webp))', text)
-                        if match:
-                            return match.group(1)
+            items = scripts if isinstance(scripts, list) else [scripts] if scripts else []
+            for script in items[:30]:
+                text = script.text if hasattr(script, 'text') else ""
+                if not text:
+                    continue
+                # 4. Direct ibank URL in scripts
+                match = re.search(
+                    r'(https?://cbu01\.alicdn\.com/img/ibank/[^"\'\\,\s]+\.(?:jpg|png|webp))',
+                    text,
+                )
+                if match:
+                    return match.group(1)
+                # 5. offerImgList JSON array
+                match = re.search(
+                    r'"offerImgList"\s*:\s*\[\s*"(https?://[^"]+)"',
+                    text,
+                )
+                if match:
+                    return match.group(1)
         except Exception:
             pass
         return None
@@ -596,6 +760,9 @@ class Parser1688:
         if not offer_id:
             return {"success": False, "error": f"Cannot extract offer ID from URL: {url}"}
 
+        # Always use desktop URL for scraping (mobile m.1688.com gets blocked)
+        url = f"https://detail.1688.com/offer/{offer_id}.html"
+
         # 1. Check cache
         if self._cache:
             cached = self._cache.get(offer_id)
@@ -605,21 +772,39 @@ class Parser1688:
 
         errors = []
 
-        # 2. Try Scrapling + LLM (free)
+        # 2. Try Scrapling + LLM (free) — with retry on transient errors
+        # Note: Scrapling itself retries 3x internally on timeout,
+        # so our 2 retries = up to 6 total browser attempts (enough).
+        RETRYABLE_KEYWORDS = [
+            "anti-bot", "login", "redirect", "captcha", "验证",
+            "timeout", "timed out", "none",
+        ]
+        max_retries = 2
         if self._scrapling:
-            try:
-                t0 = time.time()
-                result = self._scrapling.parse(url, offer_id, debug_dir=self._debug_dir)
-                result["success"] = True
-                result["_elapsed_sec"] = round(time.time() - t0, 1)
-                # Cache successful result
-                if self._cache:
-                    self._cache.put(offer_id, result)
-                return result
-            except Exception as e:
-                err_msg = f"Scrapling+LLM: {e}"
-                errors.append(err_msg)
-                print(f"[parser_1688] {err_msg}", file=sys.stderr)
+            for attempt in range(max_retries):
+                try:
+                    t0 = time.time()
+                    result = self._scrapling.parse(url, offer_id, debug_dir=self._debug_dir)
+                    result["success"] = True
+                    result["_elapsed_sec"] = round(time.time() - t0, 1)
+                    # Cache successful result
+                    if self._cache:
+                        self._cache.put(offer_id, result)
+                    return result
+                except Exception as e:
+                    err_msg = f"Scrapling+LLM (attempt {attempt+1}): {e}"
+                    errors.append(err_msg)
+                    print(f"[parser_1688] {err_msg}", file=sys.stderr)
+                    # Retry on transient errors (anti-bot, timeout, etc.)
+                    if attempt < max_retries - 1:
+                        err_lower = str(e).lower()
+                        retryable = any(kw in err_lower for kw in RETRYABLE_KEYWORDS)
+                        if retryable:
+                            delay = 5 if "anti-bot" in err_lower else 3
+                            print(f"[parser_1688] Retrying in {delay}s...", file=sys.stderr)
+                            time.sleep(delay)
+                        else:
+                            break  # non-transient error, don't retry
 
         # 3. Failed
         return {
