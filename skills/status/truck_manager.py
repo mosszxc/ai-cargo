@@ -25,6 +25,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from skills.common.access import require_manager
+from skills.common.keyboards import (
+    client_actions_keyboard,
+    truck_actions_keyboard,
+    truck_status_keyboard,
+)
 from skills.common.logger import logger
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "companies"
@@ -171,6 +176,7 @@ def update_status(company_id: str, truck_id: str, new_status: str):
         "notification_text": notification,
         "clients_to_notify": notifications,
         "notify_count": len(notifications),
+        "reply_markup": truck_actions_keyboard(truck_id),
     }))
 
 
@@ -243,6 +249,9 @@ def list_trucks(company_id: str):
             "client_count": client_count,
         })
     conn.close()
+    # Each truck gets an actions keyboard
+    for t in result:
+        t["reply_markup"] = truck_actions_keyboard(t["id"])
     print(json.dumps({"ok": True, "trucks": result, "count": len(result)}))
 
 
@@ -295,6 +304,7 @@ def lookup_client(company_id: str, telegram_id: str):
             "ok": True,
             "found": False,
             "message": "Не нашёл ваш груз. Обратитесь к менеджеру для привязки к фуре.",
+            "reply_markup": client_actions_keyboard(),
         }))
         return
 
@@ -309,7 +319,13 @@ def lookup_client(company_id: str, telegram_id: str):
             "cargo": r["cargo_description"],
         })
 
-    print(json.dumps({"ok": True, "found": True, "trucks": trucks, "count": len(trucks)}))
+    print(json.dumps({
+        "ok": True,
+        "found": True,
+        "trucks": trucks,
+        "count": len(trucks),
+        "reply_markup": client_actions_keyboard(),
+    }))
 
 
 def delete_truck(company_id: str, truck_id: str):
