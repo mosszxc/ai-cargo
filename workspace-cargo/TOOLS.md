@@ -8,6 +8,8 @@
 | cargo-calc (parser) | Парсинг товаров с 1688.com | `python3 skills/calc/parser_1688.py` |
 | cargo-status | Управление фурами и уведомления | `python3 skills/status/truck_manager.py` |
 | cargo-admin | Управление ставками | `python3 skills/admin/rate_manager.py` |
+| cargo-analytics | Аналитика использования | `python3 skills/admin/rate_manager.py analytics --company <id> --period <day/week/month/all>` |
+| cargo-analytics-all | Сводка по всем компаниям (owner) | `python3 skills/admin/rate_manager.py analytics-all --period <day/week/month/all>` |
 | cargo-onboarding | Настройка новой компании | `python3 skills/onboarding/onboarding.py` |
 
 ## Infrastructure
