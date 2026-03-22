@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from skills.common.access import require_manager
+from skills.common.analytics import get_company_stats, get_owner_summary, format_company_stats, format_owner_summary
 from skills.common.logger import logger
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "companies"
@@ -436,6 +437,16 @@ def main():
     # init
     subparsers.add_parser("init", help="Create default rates.json")
 
+    # analytics (per-company)
+    p_an = subparsers.add_parser("analytics", help="Usage analytics for this company")
+    p_an.add_argument("--period", default="month", choices=["day", "week", "month", "all"],
+                       help="Time period: day/week/month/all")
+
+    # analytics-all (owner: cross-company)
+    p_aa = subparsers.add_parser("analytics-all", help="Cross-company analytics (owner only)")
+    p_aa.add_argument("--period", default="month", choices=["day", "week", "month", "all"],
+                       help="Time period: day/week/month/all")
+
     args = parser.parse_args()
 
     # Access control: all rate_manager commands are manager-only
@@ -469,6 +480,14 @@ def main():
         add_route(args.company, args.route, args.transport, args.rate, args.days_min, args.days_max)
     elif args.command == "init":
         init_rates(args.company)
+    elif args.command == "analytics":
+        stats = get_company_stats(args.company, args.period)
+        formatted = format_company_stats(args.company, stats)
+        print(json.dumps({"ok": True, "formatted": formatted, "data": stats}))
+    elif args.command == "analytics-all":
+        stats = get_owner_summary(args.period)
+        formatted = format_owner_summary(stats)
+        print(json.dumps({"ok": True, "formatted": formatted, "data": stats}))
 
 
 if __name__ == "__main__":
