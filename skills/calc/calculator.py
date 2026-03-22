@@ -20,6 +20,7 @@ from typing import Optional
 from skills.common.keyboards import after_calc_keyboard, client_actions_keyboard
 from skills.common.logger import logger
 from skills.common.rate_limiter import limiter
+from skills.common.history import history
 
 
 @dataclass
@@ -434,6 +435,8 @@ def main():
         logger.log(args.caller_id, args.company, "calc", args.params_json, response_text)
         if result["success"]:
             limiter.increment(args.caller_id, args.company, "calc")
+            calc_id = history.save(args.caller_id, args.company, raw_params, result)
+            result["calc_id"] = calc_id
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
