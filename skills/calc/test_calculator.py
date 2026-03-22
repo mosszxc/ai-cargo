@@ -5,7 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-# Add parent to path for import
+# Add project root and parent to path for import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from calculator import CargoParams, calculate, load_rates, adapt_parser_output

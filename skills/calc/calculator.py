@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from skills.common.keyboards import after_calc_keyboard, client_actions_keyboard
 from skills.common.logger import logger
 from skills.common.rate_limiter import limiter
 
@@ -219,6 +220,7 @@ def calculate(rates: dict, params: CargoParams) -> dict:
         return {
             "success": False,
             "error": "Укажите вес груза, чтобы я посчитал.",
+            "reply_markup": client_actions_keyboard(),
         }
 
     min_weight = rates.get("min_weight_kg", 0)
@@ -232,6 +234,7 @@ def calculate(rates: dict, params: CargoParams) -> dict:
         return {
             "success": False,
             "error": f"У компании нет ставок на маршрут {params.origin}→{params.destination}. Обратитесь к менеджеру.",
+            "reply_markup": client_actions_keyboard(),
         }
 
     # Calculate per transport
@@ -245,6 +248,7 @@ def calculate(rates: dict, params: CargoParams) -> dict:
         return {
             "success": False,
             "error": "Не удалось рассчитать стоимость. Проверьте параметры.",
+            "reply_markup": client_actions_keyboard(),
         }
 
     # Format output
@@ -253,6 +257,7 @@ def calculate(rates: dict, params: CargoParams) -> dict:
     return {
         "success": True,
         "summary": summary,
+        "reply_markup": after_calc_keyboard(has_results=True),
         "results": [
             {
                 "transport": r.transport_type,
