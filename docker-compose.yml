@@ -1,0 +1,52 @@
+version: "3.8"
+
+x-common: &common
+  build: .
+  env_file: .env
+  restart: unless-stopped
+  volumes:
+    - db-data:/app/data
+
+services:
+  # --- Step 1: Parse Avito sellers ---
+  parser:
+    <<: *common
+    command: ["scripts.avito_outreach.parser"]
+    environment:
+      - AVITO_DB_PATH=/app/data/avito_sellers.db
+
+  # --- Step 2: Score sellers (China importer likelihood) ---
+  scorer:
+    <<: *common
+    command: ["scripts.avito_outreach.scoring"]
+    environment:
+      - AVITO_DB_PATH=/app/data/avito_sellers.db
+    depends_on:
+      parser:
+        condition: service_completed_successfully
+
+  # --- Step 3: Send outreach messages ---
+  sender:
+    <<: *common
+    command: ["scripts.avito_outreach.sender"]
+    environment:
+      - AVITO_DB_PATH=/app/data/avito_sellers.db
+      - AVITO_ACCOUNTS_PATH=/app/data/avito_accounts.json
+    depends_on:
+      scorer:
+        condition: service_completed_successfully
+
+  # --- Health-check + monitoring ---
+  healthcheck:
+    <<: *common
+    command: ["scripts.avito_outreach.healthcheck"]
+    ports:
+      - "${HEALTH_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  db-data:
