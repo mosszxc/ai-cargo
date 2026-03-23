@@ -1,272 +1,239 @@
-"""Billing: subscriptions, usage limits, and grace period logic.
+"""Billing / plan management for cargo companies.
 
-Central DB at data/billing.db stores:
-- subscriptions: company plans, usage counters, and payment status
+Tracks company plans (pilot, starter, business, pro).
+Pilot plan: 100 total calculations, 14 days — whichever comes first.
+Companies without a plan record are treated as unlimited (legacy/paying).
 """
 
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "billing.db"
+BILLING_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "billing.db"
 
-PLAN_LIMITS = {
-    "start": 300,
-    "business": 1000,
-    "pro": 3000,
+PLAN_DEFAULTS = {
+    "pilot": {"calc_limit": 100, "duration_days": 14},
+    "starter": {"calc_limit": 300, "duration_days": 30},
+    "business": {"calc_limit": 1000, "duration_days": 30},
+    "pro": {"calc_limit": 3000, "duration_days": 30},
 }
 
-GRACE_PERIOD_DAYS = 3
-WARNING_THRESHOLD = 0.8
+PILOT_EXPIRED_MSG = (
+    "Пилотный период завершён. "
+    "Свяжитесь с нами для подключения тарифа и продолжения работы."
+)
 
 
-def get_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+class Billing:
+    def __init__(self, db_path: Path = BILLING_DB_PATH):
+        self.db_path = db_path
+        self._init_db()
 
+    def _init_db(self):
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS company_plans (
+                    company_id TEXT PRIMARY KEY,
+                    plan TEXT NOT NULL,
+                    calc_limit INTEGER NOT NULL,
+                    calc_used INTEGER DEFAULT 0,
+                    started_at DATETIME NOT NULL,
+                    expires_at DATETIME NOT NULL
+                )
+            """)
+            conn.commit()
 
-def init_db(conn: sqlite3.Connection | None = None):
-    """Create subscriptions table if it doesn't exist."""
-    own_conn = conn is None
-    if own_conn:
-        conn = get_connection()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            company_id TEXT PRIMARY KEY,
-            plan TEXT NOT NULL DEFAULT 'start',
-            start_date TEXT NOT NULL,
-            paid_until TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'active',
-            calc_count_month INTEGER NOT NULL DEFAULT 0,
-            overage_count INTEGER NOT NULL DEFAULT 0,
-            month TEXT NOT NULL
-        );
-    """)
-    conn.commit()
-    if own_conn:
-        conn.close()
+    def activate_pilot(self, company_id: str, now: Optional[datetime] = None) -> dict:
+        """Activate pilot plan for a company. Returns plan info."""
+        now = now or datetime.now()
+        defaults = PLAN_DEFAULTS["pilot"]
+        expires_at = now + timedelta(days=defaults["duration_days"])
 
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO company_plans (company_id, plan, calc_limit, calc_used, started_at, expires_at)
+                VALUES (?, 'pilot', ?, 0, ?, ?)
+                ON CONFLICT(company_id) DO UPDATE SET
+                    plan = 'pilot',
+                    calc_limit = ?,
+                    calc_used = 0,
+                    started_at = ?,
+                    expires_at = ?
+            """, (
+                company_id,
+                defaults["calc_limit"],
+                now.isoformat(),
+                expires_at.isoformat(),
+                defaults["calc_limit"],
+                now.isoformat(),
+                expires_at.isoformat(),
+            ))
+            conn.commit()
 
-class BillingManager:
+        return {
+            "company_id": company_id,
+            "plan": "pilot",
+            "calc_limit": defaults["calc_limit"],
+            "calc_used": 0,
+            "started_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+        }
 
-    def __init__(self, db_path: Path | None = None):
-        self._db_path = db_path or DB_PATH
+    def get_plan(self, company_id: str) -> Optional[dict]:
+        """Get current plan for a company. Returns None if no plan (unlimited)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM company_plans WHERE company_id = ?",
+                (company_id,),
+            ).fetchone()
 
-    def _get_conn(self) -> sqlite3.Connection:
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self._db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+        if not row:
+            return None
 
-    def _ensure_db(self, conn: sqlite3.Connection):
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS subscriptions (
-                company_id TEXT PRIMARY KEY,
-                plan TEXT NOT NULL DEFAULT 'start',
-                start_date TEXT NOT NULL,
-                paid_until TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'active',
-                calc_count_month INTEGER NOT NULL DEFAULT 0,
-                overage_count INTEGER NOT NULL DEFAULT 0,
-                month TEXT NOT NULL
-            );
-        """)
+        return {
+            "company_id": row["company_id"],
+            "plan": row["plan"],
+            "calc_limit": row["calc_limit"],
+            "calc_used": row["calc_used"],
+            "started_at": row["started_at"],
+            "expires_at": row["expires_at"],
+        }
 
-    def get_subscription(self, company_id: str, conn: sqlite3.Connection | None = None) -> dict | None:
-        """Get current subscription for a company. Returns dict or None."""
-        own_conn = conn is None
-        if own_conn:
-            conn = self._get_conn()
-            self._ensure_db(conn)
-        row = conn.execute(
-            "SELECT * FROM subscriptions WHERE company_id = ?",
-            (company_id,),
-        ).fetchone()
-        if own_conn:
-            conn.close()
-        if row:
-            return {k: row[k] for k in row.keys()}
-        return None
+    def check_allowance(self, company_id: str, now: Optional[datetime] = None) -> dict:
+        """Check if company can perform a calculation.
 
-    def create_subscription(self, company_id: str, plan: str = "start",
-                            paid_until: str | None = None,
-                            conn: sqlite3.Connection | None = None) -> dict:
-        """Create a new subscription. Returns the subscription dict."""
-        own_conn = conn is None
-        if own_conn:
-            conn = self._get_conn()
-            self._ensure_db(conn)
-        now = datetime.now()
-        current_month = now.strftime("%Y-%m")
-        if paid_until is None:
-            paid_until = (now + timedelta(days=30)).strftime("%Y-%m-%d")
-        try:
+        Returns:
+            {"allowed": True, "remaining": N, "plan": "pilot"}
+            or {"allowed": True, "plan": None}  -- no plan = unlimited
+            or {"allowed": False, "reason": "expired"|"limit", "error": "..."}
+        """
+        plan = self.get_plan(company_id)
+
+        if plan is None:
+            return {"allowed": True, "plan": None}
+
+        now = now or datetime.now()
+        expires_at = datetime.fromisoformat(plan["expires_at"])
+
+        if now >= expires_at:
+            return {
+                "allowed": False,
+                "reason": "expired",
+                "plan": plan["plan"],
+                "error": PILOT_EXPIRED_MSG,
+            }
+
+        if plan["calc_used"] >= plan["calc_limit"]:
+            return {
+                "allowed": False,
+                "reason": "limit",
+                "plan": plan["plan"],
+                "error": PILOT_EXPIRED_MSG,
+            }
+
+        remaining = plan["calc_limit"] - plan["calc_used"]
+        return {
+            "allowed": True,
+            "plan": plan["plan"],
+            "remaining": remaining,
+            "calc_used": plan["calc_used"],
+            "calc_limit": plan["calc_limit"],
+        }
+
+    def increment_usage(self, company_id: str) -> int:
+        """Increment calc_used counter. Returns new count."""
+        with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                """INSERT INTO subscriptions
-                   (company_id, plan, start_date, paid_until, status, calc_count_month, overage_count, month)
-                   VALUES (?, ?, ?, ?, 'active', 0, 0, ?)""",
-                (company_id, plan, now.strftime("%Y-%m-%d"), paid_until, current_month),
+                "UPDATE company_plans SET calc_used = calc_used + 1 WHERE company_id = ?",
+                (company_id,),
             )
             conn.commit()
-        finally:
-            if own_conn:
-                conn.close()
-        return self.get_subscription(company_id)
 
-    def check_limit(self, company_id: str, conn: sqlite3.Connection | None = None) -> dict:
-        """Check if company can make a calculation.
+            row = conn.execute(
+                "SELECT calc_used FROM company_plans WHERE company_id = ?",
+                (company_id,),
+            ).fetchone()
 
-        Returns dict with:
-            allowed: bool - can proceed
-            warning: bool - approaching limit or grace period
-            reason: str - explanation if not allowed
-        """
-        own_conn = conn is None
-        if own_conn:
-            conn = self._get_conn()
-            self._ensure_db(conn)
-        try:
-            sub = self.get_subscription(company_id, conn)
-            if not sub:
-                return {"allowed": False, "warning": False, "reason": "Подписка не найдена"}
+        return row[0] if row else 0
 
-            if sub["status"] == "blocked":
-                return {"allowed": False, "warning": False, "reason": "Подписка заблокирована"}
+    def upgrade_plan(self, company_id: str, plan: str, now: Optional[datetime] = None) -> dict:
+        """Upgrade a company to a paid plan."""
+        if plan not in PLAN_DEFAULTS:
+            raise ValueError(f"Unknown plan: {plan}. Available: {list(PLAN_DEFAULTS.keys())}")
 
-            today = datetime.now().date()
-            paid_until = datetime.strptime(sub["paid_until"], "%Y-%m-%d").date()
+        now = now or datetime.now()
+        defaults = PLAN_DEFAULTS[plan]
+        expires_at = now + timedelta(days=defaults["duration_days"])
 
-            if sub["status"] == "expired":
-                return {"allowed": False, "warning": False, "reason": "Подписка истекла"}
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO company_plans (company_id, plan, calc_limit, calc_used, started_at, expires_at)
+                VALUES (?, ?, ?, 0, ?, ?)
+                ON CONFLICT(company_id) DO UPDATE SET
+                    plan = ?,
+                    calc_limit = ?,
+                    calc_used = 0,
+                    started_at = ?,
+                    expires_at = ?
+            """, (
+                company_id,
+                plan,
+                defaults["calc_limit"],
+                now.isoformat(),
+                expires_at.isoformat(),
+                plan,
+                defaults["calc_limit"],
+                now.isoformat(),
+                expires_at.isoformat(),
+            ))
+            conn.commit()
 
-            # Grace period check
-            in_grace = False
-            if today > paid_until:
-                grace_end = paid_until + timedelta(days=GRACE_PERIOD_DAYS)
-                if today <= grace_end:
-                    in_grace = True
-                else:
-                    return {"allowed": False, "warning": False, "reason": "Подписка истекла (grace period закончился)"}
+        return {
+            "company_id": company_id,
+            "plan": plan,
+            "calc_limit": defaults["calc_limit"],
+            "calc_used": 0,
+            "started_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+        }
 
-            # Reset month counter if new month
-            current_month = datetime.now().strftime("%Y-%m")
-            if sub["month"] != current_month:
-                conn.execute(
-                    "UPDATE subscriptions SET calc_count_month = 0, overage_count = 0, month = ? WHERE company_id = ?",
-                    (current_month, company_id),
-                )
-                conn.commit()
-                sub["calc_count_month"] = 0
-                sub["overage_count"] = 0
+    def remove_plan(self, company_id: str) -> bool:
+        """Remove plan (make company unlimited). Returns True if deleted."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM company_plans WHERE company_id = ?",
+                (company_id,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
-            limit = PLAN_LIMITS.get(sub["plan"], 300)
-            usage = sub["calc_count_month"]
-            at_warning = usage >= limit * WARNING_THRESHOLD
-            over_limit = usage >= limit
+    def format_status(self, company_id: str) -> str:
+        """Format plan status as a human-readable message."""
+        check = self.check_allowance(company_id)
 
-            warning = in_grace or at_warning
+        if check["plan"] is None:
+            return "Тарифный план: безлимитный"
 
-            return {"allowed": True, "warning": warning, "over_limit": over_limit, "reason": None}
-        finally:
-            if own_conn:
-                conn.close()
+        plan = self.get_plan(company_id)
+        plan_labels = {"pilot": "Пилот (бесплатно)", "starter": "Старт", "business": "Бизнес", "pro": "Про"}
+        label = plan_labels.get(plan["plan"], plan["plan"])
 
-    def increment_usage(self, company_id: str, conn: sqlite3.Connection | None = None) -> dict:
-        """Increment calc_count_month. Resets counter on new month. Tracks overage.
+        if not check["allowed"]:
+            return f"Тарифный план: {label}\nСтатус: {check['error']}"
 
-        Returns updated usage stats.
-        """
-        own_conn = conn is None
-        if own_conn:
-            conn = self._get_conn()
-            self._ensure_db(conn)
-        try:
-            sub = self.get_subscription(company_id, conn)
-            if not sub:
-                return {"ok": False, "error": "Подписка не найдена"}
-
-            current_month = datetime.now().strftime("%Y-%m")
-
-            # Reset on new month
-            if sub["month"] != current_month:
-                conn.execute(
-                    "UPDATE subscriptions SET calc_count_month = 1, overage_count = 0, month = ? WHERE company_id = ?",
-                    (current_month, company_id),
-                )
-                conn.commit()
-                return {"ok": True, "calc_count_month": 1, "overage_count": 0}
-
-            limit = PLAN_LIMITS.get(sub["plan"], 300)
-            new_count = sub["calc_count_month"] + 1
-
-            if new_count > limit:
-                conn.execute(
-                    "UPDATE subscriptions SET calc_count_month = ?, overage_count = overage_count + 1 WHERE company_id = ?",
-                    (new_count, company_id),
-                )
-                conn.commit()
-                updated = self.get_subscription(company_id, conn)
-                return {"ok": True, "calc_count_month": new_count, "overage_count": updated["overage_count"]}
-            else:
-                conn.execute(
-                    "UPDATE subscriptions SET calc_count_month = ? WHERE company_id = ?",
-                    (new_count, company_id),
-                )
-                conn.commit()
-                return {"ok": True, "calc_count_month": new_count, "overage_count": sub["overage_count"]}
-        finally:
-            if own_conn:
-                conn.close()
-
-    def get_usage_stats(self, company_id: str, conn: sqlite3.Connection | None = None) -> dict | None:
-        """Get current usage statistics.
-
-        Returns dict with count, limit, usage_percent, overage_count or None.
-        """
-        own_conn = conn is None
-        if own_conn:
-            conn = self._get_conn()
-            self._ensure_db(conn)
-        try:
-            sub = self.get_subscription(company_id, conn)
-            if not sub:
-                return None
-
-            limit = PLAN_LIMITS.get(sub["plan"], 300)
-            count = sub["calc_count_month"]
-            pct = round(count / limit * 100, 1) if limit > 0 else 0
-
-            return {
-                "company_id": company_id,
-                "plan": sub["plan"],
-                "count": count,
-                "limit": limit,
-                "usage_percent": pct,
-                "overage_count": sub["overage_count"],
-                "status": sub["status"],
-                "paid_until": sub["paid_until"],
-            }
-        finally:
-            if own_conn:
-                conn.close()
-
-    def update_subscription(self, company_id: str, **kwargs) -> bool:
-        """Update subscription fields. Returns True if updated."""
-        allowed = {"plan", "paid_until", "status"}
-        fields = {k: v for k, v in kwargs.items() if k in allowed}
-        if not fields:
-            return False
-        conn = self._get_conn()
-        self._ensure_db(conn)
-        sets = ", ".join(f"{k} = ?" for k in fields)
-        vals = list(fields.values()) + [company_id]
-        cursor = conn.execute(f"UPDATE subscriptions SET {sets} WHERE company_id = ?", vals)
-        conn.commit()
-        conn.close()
-        return cursor.rowcount > 0
+        remaining = check["remaining"]
+        expires = plan["expires_at"][:10]
+        return (
+            f"Тарифный план: {label}\n"
+            f"Расчётов использовано: {plan['calc_used']}/{plan['calc_limit']}\n"
+            f"Осталось: {remaining}\n"
+            f"Действует до: {expires}"
+        )
 
 
-# Module-level singleton for convenience
-billing = BillingManager()
+# Global instance
+billing = Billing()

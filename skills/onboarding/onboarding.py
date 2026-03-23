@@ -782,6 +782,11 @@ def finalize(company_id: str) -> dict:
         except Exception as e:
             db_result = {"ok": True, "note": f"DB init skipped: {e}"}
 
+    # Activate pilot plan (100 free calculations, 14 days)
+    from skills.common.billing import Billing
+    billing_instance = Billing()
+    pilot_info = billing_instance.activate_pilot(company_id)
+
     # Clean up onboarding state (mark as done, keep for reference)
     state["completed"] = True
     state["finalized"] = True
@@ -794,6 +799,7 @@ def finalize(company_id: str) -> dict:
         "rates_path": str(rates_path),
         "config_path": str(config_path),
         "db_init": db_result,
+        "pilot": pilot_info,
         "routes": state["routes"],
     }
 

@@ -2,6 +2,7 @@
 
 Tracks request counts per user per company per month.
 Configurable limits per skill.
+Integrates with billing module for company-level plan enforcement.
 """
 
 import sqlite3
@@ -18,6 +19,9 @@ DEFAULT_LIMITS = {
     "admin": 200,      # 200 admin operations/month per manager
     "onboarding": 10,  # 10 onboarding attempts/month
 }
+
+# Skills that count against company billing plan
+BILLED_SKILLS = {"calc"}
 
 
 class RateLimiter:
@@ -44,12 +48,25 @@ class RateLimiter:
         return datetime.now().strftime("%Y-%m")
 
     def check(self, user_id: str, company_id: str, skill: str) -> dict:
-        """Check if user is within rate limit.
+        """Check if user is within rate limit and company billing plan.
 
         Returns:
             {"allowed": True, "count": N, "limit": M}
             or {"allowed": False, "count": N, "limit": M, "error": "..."}
         """
+        # Company-level billing check for billed skills
+        if skill in BILLED_SKILLS:
+            from skills.common.billing import billing
+            billing_check = billing.check_allowance(company_id)
+            if not billing_check["allowed"]:
+                return {
+                    "allowed": False,
+                    "count": 0,
+                    "limit": 0,
+                    "error": billing_check["error"],
+                }
+
+        # Per-user per-month rate limit
         month = self._current_month()
         limit = DEFAULT_LIMITS.get(skill, 100)
 

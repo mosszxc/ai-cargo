@@ -1,202 +1,220 @@
-"""Tests for billing module: limits, grace period, month reset."""
+#!/usr/bin/env python3
+"""Tests for billing / pilot plan management."""
 
-import sqlite3
+import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from skills.common.billing import BillingManager, PLAN_LIMITS, GRACE_PERIOD_DAYS
-
-
-@pytest.fixture
-def bm(tmp_path):
-    """BillingManager with a temp DB."""
-    db_path = tmp_path / "test_billing.db"
-    manager = BillingManager(db_path=db_path)
-    return manager
+from skills.common.billing import Billing, PILOT_EXPIRED_MSG
 
 
-class TestGetSubscription:
-    def test_no_subscription(self, bm):
-        assert bm.get_subscription("nonexistent") is None
+def test_no_plan_is_unlimited():
+    """Company without a plan should be allowed (unlimited)."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
 
-    def test_create_and_get(self, bm):
-        bm.create_subscription("comp1", plan="business")
-        sub = bm.get_subscription("comp1")
-        assert sub is not None
-        assert sub["plan"] == "business"
-        assert sub["status"] == "active"
-        assert sub["calc_count_month"] == 0
+    result = b.check_allowance("unknown-company")
+    assert result["allowed"] is True
+    assert result["plan"] is None
 
-
-class TestCheckLimit:
-    def test_no_subscription(self, bm):
-        result = bm.check_limit("nonexistent")
-        assert result["allowed"] is False
-        assert "не найдена" in result["reason"]
-
-    def test_active_under_limit(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is True
-        assert result["warning"] is False
-
-    def test_blocked_status(self, bm):
-        bm.create_subscription("comp1")
-        bm.update_subscription("comp1", status="blocked")
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is False
-        assert "заблокирована" in result["reason"]
-
-    def test_expired_status(self, bm):
-        bm.create_subscription("comp1")
-        bm.update_subscription("comp1", status="expired")
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is False
-
-    def test_warning_at_80_percent(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        # Set usage to 80% of 300 = 240
-        conn = bm._get_conn()
-        bm._ensure_db(conn)
-        conn.execute(
-            "UPDATE subscriptions SET calc_count_month = 240 WHERE company_id = 'comp1'"
-        )
-        conn.commit()
-        conn.close()
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is True
-        assert result["warning"] is True
-
-    def test_over_limit_still_allowed(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        conn = bm._get_conn()
-        bm._ensure_db(conn)
-        conn.execute(
-            "UPDATE subscriptions SET calc_count_month = 305 WHERE company_id = 'comp1'"
-        )
-        conn.commit()
-        conn.close()
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is True
-        assert result["over_limit"] is True
-
-    def test_grace_period_allowed_with_warning(self, bm):
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        bm.create_subscription("comp1", paid_until=yesterday)
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is True
-        assert result["warning"] is True
-
-    def test_grace_period_expired(self, bm):
-        long_ago = (datetime.now() - timedelta(days=GRACE_PERIOD_DAYS + 1)).strftime("%Y-%m-%d")
-        bm.create_subscription("comp1", paid_until=long_ago)
-        result = bm.check_limit("comp1")
-        assert result["allowed"] is False
-        assert "grace period" in result["reason"]
-
-    def test_month_reset(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        conn = bm._get_conn()
-        bm._ensure_db(conn)
-        conn.execute(
-            "UPDATE subscriptions SET calc_count_month = 250, month = '2020-01' WHERE company_id = 'comp1'"
-        )
-        conn.commit()
-        conn.close()
-        result = bm.check_limit("comp1")
-        # After reset, usage is 0, so no warning
-        assert result["allowed"] is True
-        assert result["warning"] is False
-        # Verify counter was reset
-        sub = bm.get_subscription("comp1")
-        assert sub["calc_count_month"] == 0
+    print("PASS: test_no_plan_is_unlimited")
 
 
-class TestIncrementUsage:
-    def test_no_subscription(self, bm):
-        result = bm.increment_usage("nonexistent")
-        assert result["ok"] is False
+def test_activate_pilot():
+    """Pilot plan should be created with correct defaults."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
 
-    def test_normal_increment(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        result = bm.increment_usage("comp1")
-        assert result["ok"] is True
-        assert result["calc_count_month"] == 1
+    now = datetime(2026, 3, 1, 12, 0, 0)
+    info = b.activate_pilot("co1", now=now)
 
-    def test_multiple_increments(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        for i in range(5):
-            result = bm.increment_usage("comp1")
-        assert result["calc_count_month"] == 5
+    assert info["plan"] == "pilot"
+    assert info["calc_limit"] == 100
+    assert info["calc_used"] == 0
+    assert info["expires_at"] == "2026-03-15T12:00:00"
 
-    def test_overage_tracking(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        conn = bm._get_conn()
-        bm._ensure_db(conn)
-        conn.execute(
-            "UPDATE subscriptions SET calc_count_month = 300 WHERE company_id = 'comp1'"
-        )
-        conn.commit()
-        conn.close()
-        result = bm.increment_usage("comp1")
-        assert result["ok"] is True
-        assert result["calc_count_month"] == 301
-        assert result["overage_count"] == 1
+    plan = b.get_plan("co1")
+    assert plan["plan"] == "pilot"
+    assert plan["calc_limit"] == 100
 
-    def test_month_reset_on_increment(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        conn = bm._get_conn()
-        bm._ensure_db(conn)
-        conn.execute(
-            "UPDATE subscriptions SET calc_count_month = 250, month = '2020-01' WHERE company_id = 'comp1'"
-        )
-        conn.commit()
-        conn.close()
-        result = bm.increment_usage("comp1")
-        assert result["ok"] is True
-        assert result["calc_count_month"] == 1
-        assert result["overage_count"] == 0
+    print("PASS: test_activate_pilot")
 
 
-class TestGetUsageStats:
-    def test_no_subscription(self, bm):
-        assert bm.get_usage_stats("nonexistent") is None
+def test_pilot_allows_within_limits():
+    """Pilot should allow calculations within 100 limit."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
 
-    def test_stats_format(self, bm):
-        bm.create_subscription("comp1", plan="business")
-        bm.increment_usage("comp1")
-        stats = bm.get_usage_stats("comp1")
-        assert stats["plan"] == "business"
-        assert stats["count"] == 1
-        assert stats["limit"] == 1000
-        assert stats["usage_percent"] == 0.1
-        assert stats["overage_count"] == 0
+    now = datetime(2026, 3, 1, 12, 0, 0)
+    b.activate_pilot("co1", now=now)
 
+    check = b.check_allowance("co1", now=now)
+    assert check["allowed"] is True
+    assert check["remaining"] == 100
 
-class TestUpdateSubscription:
-    def test_update_plan(self, bm):
-        bm.create_subscription("comp1", plan="start")
-        assert bm.update_subscription("comp1", plan="pro") is True
-        sub = bm.get_subscription("comp1")
-        assert sub["plan"] == "pro"
+    # Use some
+    for _ in range(50):
+        b.increment_usage("co1")
 
-    def test_update_nonexistent(self, bm):
-        assert bm.update_subscription("nonexistent", plan="pro") is False
+    check = b.check_allowance("co1", now=now)
+    assert check["allowed"] is True
+    assert check["remaining"] == 50
 
-    def test_disallowed_fields_ignored(self, bm):
-        bm.create_subscription("comp1")
-        assert bm.update_subscription("comp1", calc_count_month=9999) is False
+    print("PASS: test_pilot_allows_within_limits")
 
 
-class TestPlanLimits:
-    def test_all_plans_defined(self):
-        assert "start" in PLAN_LIMITS
-        assert "business" in PLAN_LIMITS
-        assert "pro" in PLAN_LIMITS
-        assert PLAN_LIMITS["start"] == 300
-        assert PLAN_LIMITS["business"] == 1000
-        assert PLAN_LIMITS["pro"] == 3000
+def test_pilot_blocks_at_limit():
+    """Pilot should block after 100 calculations."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    now = datetime(2026, 3, 1, 12, 0, 0)
+    b.activate_pilot("co1", now=now)
+
+    for _ in range(100):
+        b.increment_usage("co1")
+
+    check = b.check_allowance("co1", now=now)
+    assert check["allowed"] is False
+    assert check["reason"] == "limit"
+    assert check["error"] == PILOT_EXPIRED_MSG
+
+    print("PASS: test_pilot_blocks_at_limit")
+
+
+def test_pilot_blocks_after_expiry():
+    """Pilot should block after 14 days even if calcs remain."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    start = datetime(2026, 3, 1, 12, 0, 0)
+    b.activate_pilot("co1", now=start)
+
+    # Day 15 — expired
+    future = start + timedelta(days=15)
+    check = b.check_allowance("co1", now=future)
+    assert check["allowed"] is False
+    assert check["reason"] == "expired"
+
+    # Day 13 — still valid
+    within = start + timedelta(days=13)
+    check = b.check_allowance("co1", now=within)
+    assert check["allowed"] is True
+
+    print("PASS: test_pilot_blocks_after_expiry")
+
+
+def test_upgrade_plan():
+    """Upgrading from pilot to starter should reset usage."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    now = datetime(2026, 3, 1, 12, 0, 0)
+    b.activate_pilot("co1", now=now)
+
+    for _ in range(100):
+        b.increment_usage("co1")
+
+    # Blocked on pilot
+    check = b.check_allowance("co1", now=now)
+    assert check["allowed"] is False
+
+    # Upgrade to starter
+    info = b.upgrade_plan("co1", "starter", now=now)
+    assert info["plan"] == "starter"
+    assert info["calc_limit"] == 300
+
+    # Now allowed again
+    check = b.check_allowance("co1", now=now)
+    assert check["allowed"] is True
+    assert check["remaining"] == 300
+
+    print("PASS: test_upgrade_plan")
+
+
+def test_remove_plan_makes_unlimited():
+    """Removing plan should make company unlimited."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    b.activate_pilot("co1")
+    assert b.get_plan("co1") is not None
+
+    removed = b.remove_plan("co1")
+    assert removed is True
+
+    check = b.check_allowance("co1")
+    assert check["allowed"] is True
+    assert check["plan"] is None
+
+    print("PASS: test_remove_plan_makes_unlimited")
+
+
+def test_separate_companies():
+    """Different companies have independent plans."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    now = datetime(2026, 3, 1, 12, 0, 0)
+    b.activate_pilot("co1", now=now)
+    b.activate_pilot("co2", now=now)
+
+    for _ in range(100):
+        b.increment_usage("co1")
+
+    # co1 blocked, co2 still fine
+    assert b.check_allowance("co1", now=now)["allowed"] is False
+    assert b.check_allowance("co2", now=now)["allowed"] is True
+
+    print("PASS: test_separate_companies")
+
+
+def test_format_status():
+    """Status formatting should work for pilot and unlimited."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    # Unlimited
+    status = b.format_status("no-plan-co")
+    assert "безлимитный" in status
+
+    # Pilot — activate now so it doesn't expire during test
+    b.activate_pilot("co1")
+    for _ in range(10):
+        b.increment_usage("co1")
+
+    status = b.format_status("co1")
+    assert "Пилот" in status
+    assert "10/100" in status
+
+    print("PASS: test_format_status")
+
+
+def test_increment_returns_count():
+    """Increment should return current count."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        b = Billing(db_path=Path(f.name))
+
+    b.activate_pilot("co1")
+    assert b.increment_usage("co1") == 1
+    assert b.increment_usage("co1") == 2
+    assert b.increment_usage("co1") == 3
+
+    print("PASS: test_increment_returns_count")
+
+
+if __name__ == "__main__":
+    test_no_plan_is_unlimited()
+    test_activate_pilot()
+    test_pilot_allows_within_limits()
+    test_pilot_blocks_at_limit()
+    test_pilot_blocks_after_expiry()
+    test_upgrade_plan()
+    test_remove_plan_makes_unlimited()
+    test_separate_companies()
+    test_format_status()
+    test_increment_returns_count()
+    print("\n=== ALL BILLING TESTS PASSED ===")
