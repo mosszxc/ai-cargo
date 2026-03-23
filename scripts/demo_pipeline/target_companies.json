@@ -1,0 +1,401 @@
+[
+  {
+    "company_id": "demo-cargo-sssr-80",
+    "company_name": "Карго СССР 80",
+    "source_url": "https://cargo80.com/rates",
+    "source_type": "website",
+    "fallback_rates": {
+      "company_name": "Карго СССР 80",
+      "routes": [
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.70,
+              "rate_unit": "kg",
+              "days_min": 18,
+              "days_max": 25,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 340, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 199, "rate": 3.10, "rate_unit": "kg"},
+                {"min_density": 200, "max_density": 9999, "rate": 2.70, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "rail",
+              "rate": 2.20,
+              "rate_unit": "kg",
+              "days_min": 22,
+              "days_max": 30,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 280, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.20, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "air",
+              "rate": 7.00,
+              "rate_unit": "kg",
+              "days_min": 5,
+              "days_max": 8
+            }
+          ]
+        },
+        {
+          "origin": "Иу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.90,
+              "rate_unit": "kg",
+              "days_min": 20,
+              "days_max": 28,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 360, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.90, "rate_unit": "kg"}
+              ]
+            }
+          ]
+        }
+      ],
+      "min_weight_kg": 30,
+      "currency": "usd",
+      "services": {
+        "insurance_pct": 3,
+        "crating_pct": 40
+      }
+    }
+  },
+  {
+    "company_id": "demo-1kargo",
+    "company_name": "1Карго",
+    "source_url": "https://1kargo.ru/calculate",
+    "source_type": "website",
+    "fallback_rates": {
+      "company_name": "1Карго",
+      "routes": [
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.50,
+              "rate_unit": "kg",
+              "days_min": 20,
+              "days_max": 28,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 320, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 199, "rate": 2.80, "rate_unit": "kg"},
+                {"min_density": 200, "max_density": 9999, "rate": 2.50, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "rail",
+              "rate": 1.90,
+              "rate_unit": "kg",
+              "days_min": 25,
+              "days_max": 35,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 260, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 1.90, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "air",
+              "rate": 6.50,
+              "rate_unit": "kg",
+              "days_min": 5,
+              "days_max": 10
+            }
+          ]
+        },
+        {
+          "origin": "Иу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.60,
+              "rate_unit": "kg",
+              "days_min": 22,
+              "days_max": 30,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 330, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.60, "rate_unit": "kg"}
+              ]
+            }
+          ]
+        },
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Новосибирск",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.80,
+              "rate_unit": "kg",
+              "days_min": 22,
+              "days_max": 30,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 350, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.80, "rate_unit": "kg"}
+              ]
+            }
+          ]
+        }
+      ],
+      "min_weight_kg": 30,
+      "currency": "usd",
+      "services": {
+        "insurance_pct": 2.5,
+        "crating_pct": 35
+      }
+    }
+  },
+  {
+    "company_id": "demo-ruskit-transit",
+    "company_name": "РусКит-Транзит",
+    "source_url": "https://ruskit-transit.ru/tarifs",
+    "source_type": "website",
+    "fallback_rates": {
+      "company_name": "РусКит-Транзит",
+      "routes": [
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.60,
+              "rate_unit": "kg",
+              "days_min": 18,
+              "days_max": 22,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 330, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 199, "rate": 2.90, "rate_unit": "kg"},
+                {"min_density": 200, "max_density": 9999, "rate": 2.60, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "rail",
+              "rate": 2.10,
+              "rate_unit": "kg",
+              "days_min": 20,
+              "days_max": 28,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 270, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.10, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "air",
+              "rate": 6.80,
+              "rate_unit": "kg",
+              "days_min": 4,
+              "days_max": 7
+            }
+          ]
+        },
+        {
+          "origin": "Иу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.75,
+              "rate_unit": "kg",
+              "days_min": 20,
+              "days_max": 25,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 345, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.75, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "rail",
+              "rate": 2.20,
+              "rate_unit": "kg",
+              "days_min": 22,
+              "days_max": 30,
+              "density_brackets": []
+            }
+          ]
+        },
+        {
+          "origin": "Пекин",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.90,
+              "rate_unit": "kg",
+              "days_min": 18,
+              "days_max": 24,
+              "density_brackets": []
+            },
+            {
+              "type": "air",
+              "rate": 7.20,
+              "rate_unit": "kg",
+              "days_min": 3,
+              "days_max": 6
+            }
+          ]
+        }
+      ],
+      "min_weight_kg": 20,
+      "currency": "usd",
+      "services": {
+        "insurance_pct": 2,
+        "crating_pct": 45
+      }
+    }
+  },
+  {
+    "company_id": "demo-raketa-cn",
+    "company_name": "Raketa CN",
+    "source_url": "https://raketacn.ru",
+    "source_type": "website",
+    "fallback_rates": {
+      "company_name": "Raketa CN",
+      "routes": [
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.40,
+              "rate_unit": "kg",
+              "days_min": 20,
+              "days_max": 28,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 310, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 199, "rate": 2.70, "rate_unit": "kg"},
+                {"min_density": 200, "max_density": 9999, "rate": 2.40, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "rail",
+              "rate": 2.00,
+              "rate_unit": "kg",
+              "days_min": 22,
+              "days_max": 32,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 265, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.00, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "air",
+              "rate": 6.20,
+              "rate_unit": "kg",
+              "days_min": 5,
+              "days_max": 9
+            }
+          ]
+        },
+        {
+          "origin": "Иу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.55,
+              "rate_unit": "kg",
+              "days_min": 22,
+              "days_max": 30,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 325, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 2.55, "rate_unit": "kg"}
+              ]
+            }
+          ]
+        },
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Владивосток",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.20,
+              "rate_unit": "kg",
+              "days_min": 12,
+              "days_max": 18,
+              "density_brackets": []
+            }
+          ]
+        }
+      ],
+      "min_weight_kg": 50,
+      "currency": "usd",
+      "services": {
+        "insurance_pct": 3,
+        "crating_pct": 38
+      }
+    }
+  },
+  {
+    "company_id": "demo-pingo-cargo",
+    "company_name": "PinGo Cargo",
+    "source_url": "https://t.me/pingocargo",
+    "source_type": "telegram",
+    "fallback_rates": {
+      "company_name": "PinGo Cargo",
+      "routes": [
+        {
+          "origin": "Гуанчжоу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 2.85,
+              "rate_unit": "kg",
+              "days_min": 16,
+              "days_max": 22,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 355, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 199, "rate": 3.20, "rate_unit": "kg"},
+                {"min_density": 200, "max_density": 9999, "rate": 2.85, "rate_unit": "kg"}
+              ]
+            },
+            {
+              "type": "air",
+              "rate": 7.50,
+              "rate_unit": "kg",
+              "days_min": 4,
+              "days_max": 7
+            }
+          ]
+        },
+        {
+          "origin": "Иу",
+          "destination": "Москва",
+          "transports": [
+            {
+              "type": "auto",
+              "rate": 3.00,
+              "rate_unit": "kg",
+              "days_min": 18,
+              "days_max": 25,
+              "density_brackets": [
+                {"min_density": 0, "max_density": 99, "rate": 370, "rate_unit": "m3"},
+                {"min_density": 100, "max_density": 9999, "rate": 3.00, "rate_unit": "kg"}
+              ]
+            }
+          ]
+        }
+      ],
+      "min_weight_kg": 30,
+      "currency": "usd",
+      "services": {
+        "insurance_pct": 2,
+        "crating_pct": 42
+      }
+    }
+  }
+]
