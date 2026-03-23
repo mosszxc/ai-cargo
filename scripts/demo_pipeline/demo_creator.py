@@ -23,6 +23,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "companies"
 TRUCK_MANAGER = PROJECT_ROOT / "skills" / "status" / "truck_manager.py"
 
+sys.path.insert(0, str(PROJECT_ROOT))
+from skills.common.billing import Billing
+
 
 def slugify(name: str) -> str:
     """Create a URL-safe company ID from name."""
@@ -76,6 +79,10 @@ def create_demo_instance(
     db_path = company_dir / "trucks.db"
     db_result = _init_db(db_path, company_id)
 
+    # Activate pilot plan (100 free calculations, 14 days)
+    billing_instance = Billing()
+    pilot_info = billing_instance.activate_pilot(company_id)
+
     return {
         "ok": True,
         "company_id": company_id,
@@ -85,6 +92,7 @@ def create_demo_instance(
         "config_path": str(config_path),
         "db_path": str(db_path),
         "db_init": db_result,
+        "pilot": pilot_info,
         "routes": list(rates.get("routes", {}).keys()),
     }
 
