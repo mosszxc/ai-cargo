@@ -304,8 +304,7 @@ def format_result(
         parts.append(f"{params.weight_kg:g} кг")
     if params.volume_m3:
         parts.append(f"{params.volume_m3:g} м³")
-    if params.density:
-        parts.append(f"Плотность: {params.density:.0f} кг/м³")
+    # density is internal — not shown to clients
     if params.price_per_piece_cny:
         parts.append(f"¥{params.price_per_piece_cny:g}/шт")
     lines.append(" | ".join(parts))
@@ -322,8 +321,7 @@ def format_result(
         lines.append(f"\n⚠ {weight_warning}")
 
     # Delivery costs
-    density_str = f", плотность {params.density:.0f}" if params.density else ""
-    lines.append(f"\nДоставка {params.origin}→{params.destination}{density_str}:")
+    lines.append(f"\nДоставка {params.origin}→{params.destination}:")
 
     for r in results:
         label = TRANSPORT_LABELS.get(r.transport_type, r.transport_type)

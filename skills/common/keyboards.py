@@ -89,6 +89,9 @@ def manager_menu_keyboard() -> dict:
             button("📦 Новый расчёт", "action:new_calc"),
             button("👥 Клиенты", "mgr:clients"),
         ],
+        [
+            button("📋 Заказы", "mgr:orders"),
+        ],
     ])
 
 
