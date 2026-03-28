@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from parser_1688 import (
@@ -174,6 +176,10 @@ KNOWN_STORE_NAMES = [
 ]
 
 
+@pytest.mark.skipif(
+    not os.environ.get("PARSER_LIVE_TESTS"),
+    reason="Live integration test — set PARSER_LIVE_TESTS=1 to run",
+)
 def test_live_urls():
     """
     Test parser against real 1688 URLs.

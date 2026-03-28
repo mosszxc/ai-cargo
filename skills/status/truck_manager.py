@@ -39,13 +39,13 @@ VALID_STATUSES = [
 ]
 
 STATUS_TEMPLATES = {
-    "warehouse": "Ваш груз принят на склад в Китае. Ожидайте отправки.",
-    "packed": "Ваш груз упакован и готовится к отправке.",
-    "departed": "Ваш груз отправлен! Маршрут: {route}. Ориентировочно: 18-25 дн.",
-    "border": "Ваш груз на погранпереходе. Ожидание прохождения.",
-    "customs": "Ваш груз прошёл таможню, в пути до Москвы.",
-    "moscow": "Ваш груз прибыл в Москву! Свяжитесь для получения.",
-    "delivered": "Ваш груз выдан. Спасибо за доверие!",
+    "warehouse": "Ваш груз принят на склад в Китае (фура {truck_id}). Ожидайте отправки.",
+    "packed": "Ваш груз упакован и готовится к отправке (фура {truck_id}).",
+    "departed": "Ваш груз отправлен! Маршрут: {route} (фура {truck_id}). Ориентировочно: 18-25 дн.",
+    "border": "Ваш груз на погранпереходе (фура {truck_id}). Ожидание прохождения.",
+    "customs": "Ваш груз прошёл таможню (фура {truck_id}), в пути до Москвы.",
+    "moscow": "Ваш груз прибыл в Москву! Фура {truck_id}. Свяжитесь для получения.",
+    "delivered": "Ваш груз выдан (фура {truck_id}). Спасибо за доверие!",
 }
 
 STATUS_LABELS = {
@@ -104,6 +104,12 @@ def init_db(company_id: str):
 
 
 def create_truck(company_id: str, truck_id: str, route: str):
+    if not truck_id or not truck_id.strip():
+        print(json.dumps({"ok": False, "error": "Идентификатор фуры не может быть пустым."}))
+        sys.exit(1)
+    if not route or not route.strip():
+        print(json.dumps({"ok": False, "error": "Маршрут не может быть пустым."}))
+        sys.exit(1)
     conn = get_connection(company_id)
     try:
         conn.execute(
@@ -126,6 +132,9 @@ def create_truck(company_id: str, truck_id: str, route: str):
 
 
 def update_status(company_id: str, truck_id: str, new_status: str):
+    if not truck_id or not truck_id.strip():
+        print(json.dumps({"ok": False, "error": "Идентификатор фуры не может быть пустым."}))
+        sys.exit(1)
     if new_status not in VALID_STATUSES:
         print(json.dumps({
             "ok": False,
@@ -156,7 +165,7 @@ def update_status(company_id: str, truck_id: str, new_status: str):
     conn.close()
 
     template = STATUS_TEMPLATES[new_status]
-    notification = template.format(route=truck["route"])
+    notification = template.format(route=truck["route"], truck_id=truck_id)
 
     notifications = []
     for client in clients:
@@ -181,6 +190,12 @@ def update_status(company_id: str, truck_id: str, new_status: str):
 
 
 def add_client(company_id: str, truck_id: str, telegram_id: str, name: str, cargo: str = ""):
+    if not name or not name.strip():
+        print(json.dumps({"ok": False, "error": "Имя клиента не может быть пустым."}))
+        sys.exit(1)
+    if not telegram_id or not telegram_id.strip():
+        print(json.dumps({"ok": False, "error": "Telegram ID не может быть пустым."}))
+        sys.exit(1)
     conn = get_connection(company_id)
     # Check truck exists
     truck = conn.execute("SELECT id FROM trucks WHERE id = ?", (truck_id,)).fetchone()

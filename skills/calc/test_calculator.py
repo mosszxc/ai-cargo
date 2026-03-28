@@ -29,21 +29,21 @@ def test_basic_clothing():
     assert result["success"], f"Expected success, got: {result.get('error')}"
     assert result["params"]["density"] == 200.0
 
-    # Auto at density 200: rate_per_kg = 2.80 → 500 * 2.80 = 1400
-    auto = next(r for r in result["results"] if r["transport"] == "auto")
-    assert auto["rate"] == 2.80
-    assert auto["cost_usd"] == 1400.0
-    assert auto["rate_unit"] == "kg"
+    # Express at density 200 (200-249 bracket): rate_per_kg = 2.10 → 500 * 2.10 = 1050
+    express = next(r for r in result["results"] if r["transport"] == "express")
+    assert express["rate"] == 2.10
+    assert express["cost_usd"] == 1050.0
+    assert express["rate_unit"] == "kg"
 
-    # Rail at density 200: rate_per_kg = 2.30 → 500 * 2.30 = 1150
-    rail = next(r for r in result["results"] if r["transport"] == "rail")
-    assert rail["rate"] == 2.30
-    assert rail["cost_usd"] == 1150.0
+    # Medium at density 200: rate_per_kg = 2.00 → 500 * 2.00 = 1000
+    medium = next(r for r in result["results"] if r["transport"] == "medium")
+    assert medium["rate"] == 2.00
+    assert medium["cost_usd"] == 1000.0
 
-    # Air: 6.50/kg → 500 * 6.50 = 3250
-    air = next(r for r in result["results"] if r["transport"] == "air")
-    assert air["rate"] == 6.50
-    assert air["cost_usd"] == 3250.0
+    # Standard at density 200: rate_per_kg = 1.90 → 500 * 1.90 = 950
+    standard = next(r for r in result["results"] if r["transport"] == "standard")
+    assert standard["rate"] == 1.90
+    assert standard["cost_usd"] == 950.0
 
     print("PASS: test_basic_clothing")
 
@@ -70,9 +70,9 @@ def test_sneakers_by_piece():
     # density = 240 / 1.2 = 200
     assert result["params"]["density"] == 200.0
 
-    # Auto at density 200: rate_per_kg = 2.80 → 240 * 2.80 = 672
-    auto = next(r for r in result["results"] if r["transport"] == "auto")
-    assert auto["cost_usd"] == 672.0
+    # Express at density 200: rate_per_kg = 2.10 → 240 * 2.10 = 504
+    express = next(r for r in result["results"] if r["transport"] == "express")
+    assert express["cost_usd"] == 504.0
 
     # Check purchase cost is in summary
     assert "¥36,000" in result["summary"] or "¥36 000" in result["summary"]
@@ -95,16 +95,16 @@ def test_light_cargo_volume_rate():
     assert result["success"]
     assert result["params"]["density"] == 20.0
 
-    # Auto at density 20 (0-99 bracket): rate_per_m3 = 350 → 5.0 * 350 = 1750
-    auto = next(r for r in result["results"] if r["transport"] == "auto")
-    assert auto["rate_unit"] == "m3"
-    assert auto["rate"] == 350
-    assert auto["cost_usd"] == 1750.0
+    # Express at density 20 (0-99 bracket): rate_per_m3 = 320 → 5.0 * 320 = 1600
+    express = next(r for r in result["results"] if r["transport"] == "express")
+    assert express["rate_unit"] == "m3"
+    assert express["rate"] == 320
+    assert express["cost_usd"] == 1600.0
 
-    # Rail at density 20 (0-99 bracket): rate_per_m3 = 300 → 5.0 * 300 = 1500
-    rail = next(r for r in result["results"] if r["transport"] == "rail")
-    assert rail["rate_unit"] == "m3"
-    assert rail["cost_usd"] == 1500.0
+    # Standard at density 20 (0-99 bracket): rate_per_m3 = 300 → 5.0 * 300 = 1500
+    standard = next(r for r in result["results"] if r["transport"] == "standard")
+    assert standard["rate_unit"] == "m3"
+    assert standard["cost_usd"] == 1500.0
 
     print("PASS: test_light_cargo_volume_rate")
 
@@ -124,20 +124,20 @@ def test_fragile_with_crating():
 
     assert result["success"]
 
-    # Auto base: 300 * 2.80 = 840
-    auto = next(r for r in result["results"] if r["transport"] == "auto")
-    assert auto["cost_usd"] == 840.0
+    # Express base at density 200: 300 * 2.10 = 630
+    express = next(r for r in result["results"] if r["transport"] == "express")
+    assert express["cost_usd"] == 630.0
 
     # Fragile surcharges:
-    # - category multiplier 1.2 → surcharge = 840 * 0.2 = 168
-    # - crating 40% → surcharge = 840 * 0.4 = 336
-    assert "наценка (fragile)" in auto["surcharges"]
-    assert auto["surcharges"]["наценка (fragile)"] == 168.0
-    assert "обрешётка" in auto["surcharges"]
-    assert auto["surcharges"]["обрешётка"] == 336.0
+    # - category multiplier 1.2 → surcharge = 630 * 0.2 = 126
+    # - crating 40% → surcharge = 630 * 0.4 = 252
+    assert "наценка (fragile)" in express["surcharges"]
+    assert express["surcharges"]["наценка (fragile)"] == 126.0
+    assert "обрешётка" in express["surcharges"]
+    assert express["surcharges"]["обрешётка"] == 252.0
 
-    # Total = 840 + 168 + 336 = 1344
-    assert auto["total_usd"] == 1344.0
+    # Total = 630 + 126 + 252 = 1008
+    assert express["total_usd"] == 1008.0
 
     print("PASS: test_fragile_with_crating")
 
@@ -194,12 +194,14 @@ def test_yiwu_route():
     result = calculate(rates, params)
 
     assert result["success"]
-    # Only auto available on this route
-    assert len(result["results"]) == 1
-    assert result["results"][0]["transport"] == "auto"
+    # All 3 transport types available on this route
+    assert len(result["results"]) == 3
+    transports = {r["transport"] for r in result["results"]}
+    assert transports == {"express", "medium", "standard"}
 
-    # Density 200 → rate_per_kg = 3.00 → 400 * 3.00 = 1200
-    assert result["results"][0]["cost_usd"] == 1200.0
+    # Express at density 200 (200-249 bracket): 2.10/kg → 400 * 2.10 = 840
+    express = next(r for r in result["results"] if r["transport"] == "express")
+    assert express["cost_usd"] == 840.0
 
     print("PASS: test_yiwu_route")
 
